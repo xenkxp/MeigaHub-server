@@ -1,0 +1,1 @@
+{"name":"NVIDIA GeForce RTX 5070 Ti","vram_total_mb":16303,"vram_free_mb":5270,"vram_used_mb":10726}
