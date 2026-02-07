@@ -1,1 +1,0 @@
-& (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Definition) "start_server.ps1") -Action stop
