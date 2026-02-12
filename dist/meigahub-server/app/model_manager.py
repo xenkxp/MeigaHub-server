@@ -8,19 +8,6 @@ import httpx
 
 from .config import settings
 
-# Extensiones de modelo reconocidas por cada backend.
-# Se usa para filtrar los ficheros locales que se muestran al usuario.
-BACKEND_EXTENSIONS: dict[str, tuple[str, ...]] = {
-    "llm":     (".gguf",),
-    "whisper": (".bin",),
-    "image":   (".safetensors", ".ckpt"),
-}
-
-# Lista plana con todas las extensiones conocidas (para validación de borrado).
-ALL_MODEL_EXTENSIONS: set[str] = {
-    ext for exts in BACKEND_EXTENSIONS.values() for ext in exts
-}
-
 
 def ensure_models_dir() -> Path:
     models_path = Path(settings.models_dir)
@@ -28,29 +15,16 @@ def ensure_models_dir() -> Path:
     return models_path
 
 
-def _match_extensions(path: Path, extensions: Iterable[str] | None) -> bool:
-    """True si el archivo coincide con alguna de las extensiones (o si *extensions* es None)."""
-    if extensions is None:
-        return path.suffix.lower() in ALL_MODEL_EXTENSIONS
-    return path.suffix.lower() in set(extensions)
-
-
-def list_local_models(backend: str | None = None) -> list[str]:
+def list_local_models() -> list[str]:
     models_path = ensure_models_dir()
-    exts = BACKEND_EXTENSIONS.get(backend) if backend else None
-    return sorted(
-        p.name
-        for p in models_path.iterdir()
-        if p.is_file() and _match_extensions(p, exts)
-    )
+    return sorted([p.name for p in models_path.glob("*.gguf") if p.is_file()])
 
 
-def list_local_models_with_sizes(backend: str | None = None) -> list[dict]:
+def list_local_models_with_sizes() -> list[dict]:
     models_path = ensure_models_dir()
-    exts = BACKEND_EXTENSIONS.get(backend) if backend else None
     items = []
-    for p in models_path.iterdir():
-        if p.is_file() and _match_extensions(p, exts):
+    for p in models_path.glob("*.gguf"):
+        if p.is_file():
             items.append({"name": p.name, "size": p.stat().st_size})
     return sorted(items, key=lambda x: x["name"].lower())
 
@@ -66,10 +40,8 @@ def delete_local_model(filename: str) -> None:
 
 def safe_filename(name: str) -> str:
     filename = os.path.basename(name)
-    if not any(filename.lower().endswith(ext) for ext in ALL_MODEL_EXTENSIONS):
-        raise ValueError(
-            f"extensión no permitida; se aceptan: {', '.join(sorted(ALL_MODEL_EXTENSIONS))}"
-        )
+    if not filename.lower().endswith(".gguf"):
+        raise ValueError("solo se permiten archivos .gguf")
     if filename in {".", ".."}:
         raise ValueError("nombre inválido")
     return filename
@@ -195,43 +167,35 @@ def hf_list_files(repo: str) -> list[str]:
     return sorted([name for name in files if name.lower().endswith(".gguf")])
 
 
-def hf_list_files_with_sizes(repo: str, backend: str | None = None) -> list[dict]:
+def hf_list_files_with_sizes(repo: str) -> list[dict]:
+    """List GGUF files with sizes using HF tree API (always returns sizes)."""
     headers = {}
     if settings.huggingface_token:
         headers["Authorization"] = f"Bearer {settings.huggingface_token}"
 
-    extensions = BACKEND_EXTENSIONS.get(backend) if backend else None
-
-    def matches(name: str) -> bool:
-        if not extensions:
-            return True
-        return name.lower().endswith(tuple(ext.lower() for ext in extensions))
-
+    # Intentar la API de tree primero (siempre devuelve size)
     items: list[dict] = []
-
     try:
         tree_url = f"https://huggingface.co/api/models/{repo}/tree/main"
         with httpx.Client(timeout=15.0) as client:
             response = client.get(tree_url, headers=headers)
             response.raise_for_status()
             data = response.json()
-
         for entry in data:
             path = entry.get("path", "")
-            if matches(path):
+            if path.lower().endswith(".gguf"):
                 items.append({"name": path, "size": entry.get("size")})
-
     except Exception:
+        # Fallback: API de modelo (siblings, a veces sin size)
         model_url = f"https://huggingface.co/api/models/{repo}"
         with httpx.Client(timeout=10.0) as client:
             response = client.get(model_url, headers=headers)
             response.raise_for_status()
             data = response.json()
-
-        siblings = data.get("siblings", [])
+        siblings: Iterable[dict] = data.get("siblings", [])
         for item in siblings:
             name = item.get("rfilename", "")
-            if matches(name):
+            if name.lower().endswith(".gguf"):
                 items.append({"name": name, "size": item.get("size")})
 
     return sorted(items, key=lambda x: x["name"].lower())

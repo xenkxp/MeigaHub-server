@@ -1,0 +1,1 @@
+﻿Los modelos GGUF van aqui. Descargalos desde la UI en /ui/models o con el instalador.

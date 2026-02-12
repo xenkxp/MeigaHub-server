@@ -430,39 +430,35 @@ Desde la raíz del proyecto, ejecuta:
 powershell -ExecutionPolicy Bypass -File scripts\build_package.ps1
 ```
 
-Esto genera `dist\meigahub-server\` — un **paquete ligero (~0.1 MB)** que contiene solo el servidor y un instalador inteligente:
+Esto genera `dist\meigahub-server\` con todo lo necesario **excepto modelos y datos personales**:
 
-| Incluido en el paquete | Descargado al instalar |
+| Incluido | No incluido (excluido) |
 |---|---|
-| `app\` — código del servidor | **llama.cpp** (CPU o CUDA según GPU detectada) |
-| `scripts\` — inicio/parada/test | **whisper.cpp** — backend de audio |
-| `.env.example` — plantilla de configuración | **Modelo Whisper** ggml-medium.bin (opcional, ~1.5 GB) |
-| `installer.ps1` — instalador con descarga automática | **Python 3.12** (si no está instalado) |
+| `app\` — código del servidor | `.env` — se genera al instalar con rutas del usuario |
+| `scripts\` — inicio/parada/test | `_gpu_test.txt` — info personal de GPU |
+| `apps\` — llama.cpp + whisper.cpp | `__pycache__` — cache compilado |
+| `.env.example` — plantilla | `models\*.gguf` — demasiado grandes (~2-10 GB c/u) |
+| `installer.ps1` — instalador completo | |
 | `INSTALAR.bat` — doble clic para instalar | |
-| `README.md` — documentación | |
 
 Opcionalmente lo comprime en `dist\meigahub-server.zip`.
 
-> **Ventaja:** El paquete pesa ~0.1 MB en lugar de >1 GB porque los backends se descargan directamente desde los [releases oficiales de llama.cpp](https://github.com/ggerganov/llama.cpp/releases) y [whisper.cpp](https://github.com/ggerganov/whisper.cpp/releases) durante la instalación.
-
 ### Paso 2: El usuario final instala
 
-El usuario descomprime el ZIP y hace doble clic en **`INSTALAR.bat`**.
+El usuario copia la carpeta o descomprime el ZIP y hace doble clic en **`INSTALAR.bat`**.
 
 El instalador hace todo automáticamente:
 
 1. **Pregunta carpeta de instalación** (default: `C:\MeigaHub`)
 2. **Detecta Python 3.10+** — si no lo encuentra, ofrece descargarlo e instalarlo automáticamente
-3. **Copia los archivos del servidor** a la carpeta elegida
+3. **Copia todos los archivos** a la carpeta elegida (server, backends, scripts)
 4. **Instala dependencias Python** (`pip install -r requirements.txt`)
-5. **Detecta GPU NVIDIA** — determina si descargar versión CUDA o CPU de llama.cpp
-6. **Descarga backends desde GitHub** — llama.cpp (última versión) y whisper.cpp
-7. **Genera `.env` configurado** — detecta las rutas reales de los ejecutables descargados
-8. **Ofrece descargar modelo Whisper** — ggml-medium.bin (~1.5 GB, opcional)
-9. **Verifica la instalación** — comprueba que todo está en su sitio
-10. **Crea acceso directo** en el Escritorio (opcional)
+5. **Genera `.env` configurado** — reemplaza `__INSTALL_DIR__` por la ruta real de instalación
+6. **Detecta GPU NVIDIA** — si encuentra CUDA, configura llama.cpp-cuda automáticamente
+7. **Verifica la instalación** — comprueba que todo está en su sitio
+8. **Crea acceso directo** en el Escritorio (opcional)
 
-> **Nota:** Los modelos LLM (texto) no se descargan con el instalador. Tras instalar, el usuario los descarga desde la UI web en `/ui/models` o manualmente a la carpeta `models\`.
+> **Nota:** Los modelos GGUF no se incluyen por su tamaño. Tras instalar, el usuario los descarga desde la UI web en `/ui/models` o manualmente a la carpeta `models\`.
 
 ---
 

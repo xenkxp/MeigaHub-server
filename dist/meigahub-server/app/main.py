@@ -25,7 +25,7 @@ from .model_manager import (
     list_local_models_with_sizes,
 )
 
-app = FastAPI(title="MeigaHub Server — Texto + Audio + Imagen")
+app = FastAPI(title="MeigaHub Server — Texto + Audio")
 
 download_jobs: Dict[str, Dict[str, Any]] = {}
 
@@ -121,17 +121,6 @@ async def ensure_whisper() -> Optional[JSONResponse]:
         return error_response(str(exc), code="whisper_unavailable", status_code=409)
 
 
-async def ensure_image() -> Optional[JSONResponse]:
-    try:
-        logger.info("ensure_image")
-        await backend_manager.ensure_backend("image")
-        logger.info("ensure_image OK")
-        return None
-    except Exception as exc:
-        logger.exception("ensure_image falló: %s", exc)
-        return error_response(str(exc), code="image_unavailable", status_code=409)
-
-
 @app.get("/status")
 async def status() -> Dict[str, Any]:
     state = await backend_manager.get_status()
@@ -211,7 +200,6 @@ async def models_ui() -> Response:
         .btn-danger{background:var(--red);color:#fff;font-size:12px;padding:6px 12px}.btn-danger:hover:not(:disabled){filter:brightness(1.1)}
         .btn-ghost{background:transparent;color:var(--text2);border:1px solid var(--border)}.btn-ghost:hover{color:var(--text);border-color:var(--text2)}
         .btn-sm{padding:6px 12px;font-size:12px}
-        .btn-warn{background:var(--orange);color:#1a1b26;font-size:12px;padding:6px 12px}.btn-warn:hover:not(:disabled){filter:brightness(1.1)}
         .actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
         .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px;margin-top:12px}
         .model-card{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px;transition:border-color .2s;cursor:default}
@@ -252,14 +240,6 @@ async def models_ui() -> Response:
         .toast.show{opacity:1;transform:translateY(0)}
         .toast.ok{background:var(--green);color:#1a1b26}
         .toast.err{background:var(--red)}
-        .backend-row{display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;margin-bottom:10px;flex-wrap:wrap}
-        .backend-row .b-name{font-weight:700;font-size:14px;min-width:70px;text-transform:uppercase}
-        .backend-row .b-status{font-size:12px;padding:3px 10px;border-radius:12px;font-weight:600}
-        .backend-row .b-status.active{background:rgba(158,206,106,.2);color:var(--green)}
-        .backend-row .b-status.inactive{background:rgba(86,95,137,.25);color:var(--text2)}
-        .backend-row .b-model-select{flex:1;min-width:200px}
-        .backend-row .b-actions{display:flex;gap:6px}
-        .backend-row .b-url{font-size:11px;color:var(--text2);width:100%;margin-top:4px}
     </style>
 </head>
 <body>
@@ -283,23 +263,13 @@ async def models_ui() -> Response:
     </div>
 
     <div class="tabs">
-        <div class="tab active" onclick="switchTab('backends')">⚙ Backends</div>
-        <div class="tab" onclick="switchTab('search')">🔎 Buscar</div>
+        <div class="tab active" onclick="switchTab('search')">🔎 Buscar</div>
         <div class="tab" onclick="switchTab('download')">📦 Descargar</div>
         <div class="tab" onclick="switchTab('local')">💾 Locales</div>
     </div>
 
-    <!-- ========== BACKENDS ========== -->
-    <div class="panel active" id="panel-backends">
-        <div class="card">
-            <div class="card-header"><span class="icon">⚙</span><h3>Configuración de backends</h3></div>
-            <p style="font-size:13px;color:var(--text2);margin:0 0 14px">Selecciona qué modelo usar en cada backend y arranca/detén cada uno.</p>
-            <div id="backendsList"><div class="empty"><span class="spinner"></span>Cargando…</div></div>
-        </div>
-    </div>
-
     <!-- ========== BUSCAR ========== -->
-    <div class="panel" id="panel-search">
+    <div class="panel active" id="panel-search">
         <div class="card">
             <div class="card-header"><span class="icon">🔎</span><h3>Buscar modelos en Hugging Face</h3></div>
             <div class="input-row">
@@ -406,13 +376,12 @@ function toast(msg,ok=true){
 
 function switchTab(name){
     document.querySelectorAll('.tab').forEach((t,i)=>{
-        const panels=['backends','search','download','local'];
+        const panels=['search','download','local'];
         const active=panels[i]===name;
         t.classList.toggle('active',active);
         $('panel-'+panels[i]).classList.toggle('active',active);
     });
     if(name==='local') loadLocal();
-    if(name==='backends') loadBackends();
 }
 
 /* ── status ── */
@@ -611,151 +580,14 @@ async function removeModel(name){
     }catch(e){toast(e.message,false)}
 }
 
-/* ── backends config ── */
-let _modelsByBackend = {};
-
-async function loadBackends(){
-    const el=$('backendsList');
-    el.innerHTML='<div class="empty"><span class="spinner"></span>Cargando…</div>';
-    try{
-        const br = await fetch('/ui/backends/config');
-        const backends = await br.json();
-        if(!backends.length){el.innerHTML='<div class="empty">No hay backends registrados</div>';return}
-        // Fetch filtered models for each backend in parallel
-        const modelFetches = backends.map(b =>
-            fetch('/ui/models/local?backend='+encodeURIComponent(b.name)).then(r=>r.json())
-        );
-        const modelArrays = await Promise.all(modelFetches);
-        backends.forEach((b,i) => { _modelsByBackend[b.name] = modelArrays[i]; });
-        el.innerHTML = backends.map(b => {
-            const icon = b.name==='llm'?'🧠': b.name==='whisper'?'🎤': b.name==='image'?'🎨':'⚙';
-            const statusCls = b.active?'active':'inactive';
-            const statusTxt = b.active?'ACTIVO':'Inactivo';
-            const models = _modelsByBackend[b.name] || [];
-            const options = models.map(m =>
-                '<option value="'+m.name+'"'+(m.name===b.model?' selected':'')+'>'+m.name+'</option>'
-            ).join('');
-            const selectHtml = '<select class="b-model-select" id="bmodel-'+b.name+'" onchange="setBackendModel(&#39;'+b.name+'&#39;)">'+
-                '<option value=""'+(b.model?'':' selected')+'>— sin modelo —</option>'+options+'</select>';
-            const startBtn = '<button class="btn btn-success btn-sm" onclick="activateBackend(&#39;'+b.name+'&#39;)" '+(b.active?'disabled':'')+'>▶ Activar</button>';
-            const stopBtn = b.active?'<button class="btn btn-danger btn-sm" onclick="stopBackend()">⏹ Detener</button>':'';
-            return '<div class="backend-row">'+
-                '<span class="b-name">'+icon+' '+b.name+'</span>'+
-                '<span class="b-status '+statusCls+'">'+statusTxt+'</span>'+
-                selectHtml+
-                '<div class="b-actions">'+startBtn+stopBtn+'</div>'+
-                '<div class="b-url">URL: '+b.url+(b.has_start_command?' · ✅ Comando configurado':' · ⚠ Sin comando de arranque')+'</div>'+
-            '</div>';
-        }).join('');
-    }catch(e){
-        el.innerHTML='<div class="empty" style="color:var(--red)">Error: '+e.message+'</div>';
-    }
-}
-
-async function activateBackend(name){
-    const model = $('bmodel-'+name)?.value || '';
-    toast('Activando '+name+'…');
-    try{
-        const r = await fetch('/ui/backends/activate',{
-            method:'POST',
-            headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({name, model})
-        });
-        const d = await r.json();
-        if(!r.ok){toast(d.error?.message||'Error',false);return}
-        toast(name+' activado');
-        loadBackends();
-        loadStatus();
-    }catch(e){toast(e.message,false)}
-}
-
-async function stopBackend(){
-    toast('Deteniendo backend…');
-    try{
-        const r = await fetch('/ui/backends/stop',{method:'POST'});
-        const d = await r.json();
-        if(!r.ok){toast(d.error?.message||'Error',false);return}
-        toast('Backend detenido');
-        loadBackends();
-        loadStatus();
-    }catch(e){toast(e.message,false)}
-}
-
-async function setBackendModel(name){
-    const model = $('bmodel-'+name)?.value || '';
-    try{
-        const r = await fetch('/ui/backends/set-model',{
-            method:'POST',
-            headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({name, model})
-        });
-        const d = await r.json();
-        if(!r.ok){toast(d.error?.message||'Error',false);return}
-        toast('Modelo de '+name+' → '+(model||'ninguno'));
-    }catch(e){toast(e.message,false)}
-}
-
 /* ── init ── */
-window.addEventListener('load',async()=>{await loadGpu();loadStatus();loadBackends();setInterval(loadStatus,15000)});
+window.addEventListener('load',async()=>{await loadGpu();loadStatus();loadLocal();setInterval(loadStatus,15000)});
 </script>
 </body>
 </html>
 """
     html = html.replace("__MODELS_DIR__", settings.models_dir)
     return Response(content=html, media_type="text/html")
-
-
-# ── Backend config API (UI) ──────────────────────────────────────
-
-
-@app.get("/ui/backends/config")
-async def backends_config() -> Response:
-    """Devuelve la configuración de todos los backends registrados."""
-    return JSONResponse(content=backend_manager.get_all_backends_info())
-
-
-@app.post("/ui/backends/activate")
-async def backends_activate(payload: Dict[str, str]) -> Response:
-    """Activa un backend (detiene los demás). Opcionalmente acepta modelo."""
-    name = payload.get("name", "")
-    model = payload.get("model", "") or None
-    if not name:
-        return error_response("nombre de backend requerido", code="invalid_request")
-    try:
-        await backend_manager.ensure_backend_with_model(name, model)
-    except Exception as exc:
-        return error_response(str(exc), code="activate_failed", status_code=409)
-    return JSONResponse(content={"message": f"backend '{name}' activado"})
-
-
-@app.post("/ui/backends/stop")
-async def backends_stop() -> Response:
-    """Detiene el backend activo."""
-    try:
-        await backend_manager.stop_active_backend()
-    except Exception as exc:
-        return error_response(str(exc), code="stop_failed")
-    return JSONResponse(content={"message": "backend detenido"})
-
-
-@app.post("/ui/backends/set-model")
-async def backends_set_model(payload: Dict[str, str]) -> Response:
-    """Cambia el modelo asignado a un backend (sin reiniciar)."""
-    name = payload.get("name", "")
-    model = payload.get("model", "")
-    if not name:
-        return error_response("nombre de backend requerido", code="invalid_request")
-    if name not in backend_manager.known_backends:
-        return error_response(f"backend '{name}' no existe", code="not_found", status_code=404)
-    # Actualizar el setting correspondiente en runtime
-    attr_map = {"llm": "llm_model_name", "whisper": "whisper_model_name", "image": "image_model_name"}
-    attr = attr_map.get(name)
-    if attr:
-        setattr(settings, attr, model)
-    return JSONResponse(content={"message": f"modelo de '{name}' → {model or '(vacío)'}"})
-
-
-# ── Models UI API ────────────────────────────────────────────────
 
 
 @app.get("/ui/models/search")
@@ -775,15 +607,14 @@ async def models_search(q: str = "", limit: int = 12, only_gguf: int = 0) -> Res
 
 
 @app.get("/ui/models/files")
-async def models_files(repo: str, backend: str | None = None) -> Response:
-    files = await asyncio.to_thread(hf_list_files_with_sizes, repo, backend)
+async def models_files(repo: str) -> Response:
+    files = await asyncio.to_thread(hf_list_files_with_sizes, repo)
     return JSONResponse(content=files)
 
 
 @app.get("/ui/models/local")
-async def models_local(backend: str | None = None) -> Response:
-    """Lista modelos locales. ?backend=llm|whisper|image filtra por extensión."""
-    return JSONResponse(content=list_local_models_with_sizes(backend))
+async def models_local() -> Response:
+    return JSONResponse(content=list_local_models_with_sizes())
 
 
 @app.delete("/ui/models/local")
@@ -869,10 +700,6 @@ async def models(request: Request) -> Response:
         model_id = settings.whisper_model_name or "whisper"
         payload = {"object": "list", "data": [{"id": model_id, "object": "model"}]}
         return JSONResponse(content=payload)
-    if active == "image":
-        model_id = settings.image_model_name or "image"
-        payload = {"object": "list", "data": [{"id": model_id, "object": "model"}]}
-        return JSONResponse(content=payload)
     return JSONResponse(content={"object": "list", "data": []})
 
 
@@ -916,15 +743,6 @@ async def responses(request: Request) -> Response:
         target = settings.llm_backend_url.rstrip("/") + "/v1/responses"
     else:
         target = settings.llm_backend_url.rstrip("/") + "/v1/chat/completions"
-    return await proxy_request(request, target)
-
-
-@app.post("/v1/images/generations")
-async def images_generations(request: Request) -> Response:
-    error = await ensure_image()
-    if error:
-        return error
-    target = settings.image_backend_url.rstrip("/") + "/v1/images/generations"
     return await proxy_request(request, target)
 
 

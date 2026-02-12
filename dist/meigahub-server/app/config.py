@@ -12,18 +12,14 @@ class Settings(BaseSettings):
 
     llm_backend_url: str = Field(default="http://127.0.0.1:8080", alias="LLM_BACKEND_URL")
     whisper_backend_url: str = Field(default="http://127.0.0.1:8081", alias="WHISPER_BACKEND_URL")
-    image_backend_url: str = Field(default="http://127.0.0.1:8083", alias="IMAGE_BACKEND_URL")
 
     llm_model_name: str = Field(default="", alias="LLM_MODEL_NAME")
     whisper_model_name: str = Field(default="", alias="WHISPER_MODEL_NAME")
-    image_model_name: str = Field(default="", alias="IMAGE_MODEL_NAME")
 
     llm_start_command: str = Field(default="", alias="LLM_START_COMMAND")
     llm_stop_command: str = Field(default="", alias="LLM_STOP_COMMAND")
     whisper_start_command: str = Field(default="", alias="WHISPER_START_COMMAND")
     whisper_stop_command: str = Field(default="", alias="WHISPER_STOP_COMMAND")
-    image_start_command: str = Field(default="", alias="IMAGE_START_COMMAND")
-    image_stop_command: str = Field(default="", alias="IMAGE_STOP_COMMAND")
 
     auto_switch_backend: bool = Field(default=True, alias="AUTO_SWITCH_BACKEND")
     responses_mode: str = Field(default="map", alias="RESPONSES_MODE")
@@ -32,7 +28,6 @@ class Settings(BaseSettings):
 
     llm_health_path: str = Field(default="/v1/models", alias="LLM_HEALTH_PATH")
     whisper_health_path: str = Field(default="/v1/models", alias="WHISPER_HEALTH_PATH")
-    image_health_path: str = Field(default="/v1/models", alias="IMAGE_HEALTH_PATH")
 
     switch_timeout_seconds: float = Field(default=30.0, alias="SWITCH_TIMEOUT_SECONDS")
 
